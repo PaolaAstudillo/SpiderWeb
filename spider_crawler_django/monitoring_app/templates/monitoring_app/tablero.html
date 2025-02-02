@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tablero de Monitoreo</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Font Awesome para los iconos -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+   
+    <!-- Estilos personalizados -->
+    <style>
+        body {
+            background-color: #f4f7f6;
+            font-family: 'Roboto', sans-serif;
+        }
+        .container {
+            margin-top: 40px;
+        }
+        h1 {
+            color: #495057;
+            font-size: 36px;
+            text-align: center;
+            margin-bottom: 40px;
+            font-weight: bold;
+        }
+        .form-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+        .progress-container {
+            display: none;
+            margin-top: 30px;
+        }
+        .progress {
+            height: 30px;
+            border-radius: 15px;
+            overflow: hidden;
+            background-color: #e9ecef;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+        .progress-bar {
+            height: 100%;
+            transition: width 0.5s ease-in-out, background-color 0.5s ease-in-out;
+            background-color: #00FF4CFF;
+            border-radius: 15px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        .progress-text {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 18px;
+            color: #495057;
+        }
+        .status-success {
+            color: #28a745;
+        }
+        .status-fail {
+            color: #dc3545;
+        }
+        .status-orphan {
+            color: #ffc107;
+        }
+        .card {
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+            transition: transform 0.3s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .card-header {
+            background-color: #007bff;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            padding: 15px;
+            border-radius: 10px 10px 0 0;
+        }
+        .card-body {
+            padding: 20px;
+        }
+        .table-responsive {
+            overflow-x: auto;
+        }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .table th, .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .table tbody tr:hover {
+            background-color: #f1f1f1;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: background-color 0.3s ease-in-out;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: background-color 0.3s ease-in-out;
+        }
+        .btn-danger:hover {
+            background-color: #a71d2a;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        .alert-danger {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Tablero de Monitoreo</h1>
+
+        <!-- Formulario de dominio -->
+        <div class="form-container">
+            <h2 class="text-center">Rastrear un Dominio</h2>
+            <form action="" method="POST" id="dominio-form">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label for="dominio" class="form-label">Introduce el Dominio (Ej. ubi.com):</label>
+                    <input type="text" class="form-control" id="dominio" name="dominio" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Rastrear Dominio</button>
+            </form>
+        </div>
+
+        <!-- Mostrar progreso de Scrapy -->
+        <div class="progress-container" id="progress-container">
+            <div class="progress">
+                <div class="progress-bar" id="progress-bar" style="width: 0;"></div>
+            </div>
+            <p class="progress-text" id="progress-text">Iniciando Scrapy...</p>
+        </div>
+
+        <!-- Botón para detener Scrapy -->
+        <button id="detener-scrapy" class="btn btn-danger">Detener Scrapy</button>
+
+
+        <!-- Mostrar resultados de Scrapy -->
+        {% if result %}
+        <div class="alert alert-info">
+            <h4>Resultado de Scrapy</h4>
+            <pre>{{ result }}</pre>
+        </div>
+        {% endif %}
+
+        {% if error %}
+        <div class="alert alert-danger">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+
+        <!-- Sección de monitoreo en vivo -->
+        <div id="progreso" class="card mt-4">
+            <div class="card-header">Progreso del Monitoreo</div>
+            <div class="card-body">
+                <p><strong>Estado:</strong> <span id="estado">{{ progreso.estado }}</span></p>
+                <p><strong>Progreso:</strong> <span id="porcentaje">{{ progreso.porcentaje }}</span>%</p>
+                <p><strong>Mensajes:</strong></p>
+                <ul id="mensajes">
+                    {% for mensaje in progreso.mensajes %}
+                        <li>{{ mensaje }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+
+        <!-- Tabla con estado de páginas -->
+        <div class="card mt-4">
+            <div class="card-header">
+                Estado de las Páginas
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped">
+                        <thead>
+                            <tr>
+                                <th>URL</th>
+                                <th>Última Consulta</th>
+                                <th>Código de Estado</th>
+                                <th>¿Es Huérfana?</th>
+                                <th>Fecha de Creación</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pagina in paginas %}
+                            <tr>
+                                <td>{{ pagina.url }}</td>
+                                <td>{{ pagina.ultima_consulta|date:"Y-m-d H:i:s" }}</td>
+                                <td>
+                                    <span class="status {% if pagina.codigo_estado == 200 %}status-success{% else %}status-fail{% endif %}">
+                                        <i class="fas {% if pagina.codigo_estado == 200 %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i> 
+                                        {{ pagina.codigo_estado }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="status {% if pagina.es_huerfana %}status-orphan{% else %}status-success{% endif %}">
+                                        <i class="fas {% if pagina.es_huerfana %}fa-exclamation-circle{% else %}fa-check-circle{% endif %}"></i> 
+                                        {% if pagina.es_huerfana %}Sí{% else %}No{% endif %}
+                                    </span>
+                                </td>
+                                <td>{{ pagina.created_at|date:"Y-m-d H:i:s" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- EventSource para actualizar progreso en tiempo real -->
+    <script>
+        const eventSource = new EventSource("/stream-progreso/");
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            document.getElementById("estado").textContent = data.estado;
+            document.getElementById("porcentaje").textContent = data.porcentaje;
+
+            const mensajesList = document.getElementById("mensajes");
+            mensajesList.innerHTML = "";  
+            data.mensajes.forEach(mensaje => {
+                const li = document.createElement("li");
+                li.textContent = mensaje;
+                mensajesList.appendChild(li);
+            });
+
+            // Actualizar barra de progreso
+            const progressBar = document.getElementById("progress-bar");
+            const progressText = document.getElementById("progress-text");
+            progressBar.style.width = data.porcentaje + "%";
+
+            // Cambiar color de la barra de progreso según el porcentaje
+            if (data.porcentaje < 30) {
+                progressBar.style.backgroundColor = "#dc3545"; // Rojo
+                progressText.textContent = "Progreso inicial...";
+            } else if (data.porcentaje < 70) {
+                progressBar.style.backgroundColor = "#ffc107"; // Amarillo
+                progressText.textContent = "Progreso en curso...";
+            } else if (data.porcentaje < 100) {
+                progressBar.style.backgroundColor = "#007bff"; // Azul
+                progressText.textContent = "Progreso avanzado...";
+            } else {
+                progressBar.style.backgroundColor = "#28a745"; // Verde
+                progressText.textContent = "Completado!";
+            }
+        };
+    </script>
+
+    <script>
+        $(document).ready(function() {
+            $('#detener-scrapy').click(function() {
+                $.ajax({
+                    url: '/detener_scrapy/',
+                    method: 'GET',
+                    success: function(response) {
+                        alert("Scrapy detenido correctamente " );
+                    },
+                    error: function(xhr, status, error) {
+                        alert("Error al detener Scrapy: " + error);
+                    }
+                });
+            });
+        });
+    </script>
+     
+</body>
+</html>
