@@ -124,3 +124,37 @@ class Enlace(models.Model):
 
     def __str__(self):
         return f"{self.pagina_origen} -> {self.pagina_destino}"
+
+
+class EnlaceRoto(models.Model):
+    pagina = models.ForeignKey(
+        Pagina,
+        related_name='enlaces_rotos',
+        on_delete=models.CASCADE,
+        verbose_name="Página",
+        help_text="La página que contiene el enlace roto.",
+    )
+    url_enlace_roto = models.URLField(
+        verbose_name="URL del Enlace Roto",
+        help_text="La URL del enlace roto encontrado en la página.",
+    )
+    codigo_estado = models.IntegerField(
+        verbose_name="Código de Estado",
+        help_text="Código HTTP devuelto por el enlace roto.",
+    )
+    detectado_en = models.DateTimeField(
+        default=now,
+        verbose_name="Detectado en",
+        help_text="Fecha en la que se detectó el enlace roto.",
+    )
+
+    class Meta:
+        verbose_name = "Enlace Roto"
+        verbose_name_plural = "Enlaces Rotos"
+        ordering = ['-detectado_en']
+        indexes = [
+            models.Index(fields=['pagina', 'url_enlace_roto']),
+        ]
+
+    def __str__(self):
+        return f"Enlace roto en {self.pagina.url} -> {self.url_enlace_roto} (Código: {self.codigo_estado})"

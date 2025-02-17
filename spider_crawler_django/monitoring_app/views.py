@@ -7,7 +7,7 @@ import time
 import logging
 from contextlib import contextmanager
 from django.shortcuts import render
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.core.cache import cache
 import psutil
@@ -330,3 +330,56 @@ def detener_scrapy_view(request):
         return response
     else:
         return JsonResponse({"error": "Método no permitido"}, status=405)
+    
+    
+ 
+
+from django.core.mail import send_mail
+from django.utils.timezone import now
+
+def enviar_informe_admin(request):
+    if request.method == 'POST':
+        # Obtener el correo del destinatario desde el formulario
+        destinatario = request.POST.get('destinatario', 'admin@example.com')
+
+        # Obtener enlaces con errores (páginas con códigos de estado 4xx o 5xx)
+        enlaces_con_errores = Pagina.objects.filter(codigo_estado__gte=400, codigo_estado__lt=600)
+
+        # Obtener páginas huérfanas
+        paginas_huerfanas = Pagina.objects.filter(es_huerfana=True)
+
+        # Crear el contenido del correo electrónico
+        subject = "Informe de Enlaces con Errores y Páginas Huérfanas"
+        message = "Informe generado el {}:\n\n".format(now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        # Agregar enlaces con errores al mensaje
+        if enlaces_con_errores.exists():
+            message += "=== Enlaces con Errores ===\n"
+            for pagina in enlaces_con_errores:
+                message += f"URL: {pagina.url} - Código de Estado: {pagina.codigo_estado}\n"
+        else:
+            message += "No se encontraron enlaces con errores.\n"
+
+        # Agregar páginas huérfanas al mensaje
+        if paginas_huerfanas.exists():
+            message += "\n=== Páginas Huérfanas ===\n"
+            for pagina in paginas_huerfanas:
+                message += f"URL: {pagina.url}\n"
+        else:
+            message += "\nNo se encontraron páginas huérfanas.\n"
+
+        # Enviar el correo electrónico
+        try:
+            send_mail(
+                subject,
+                message,
+                'tu_correo@gmail.com',  # Remitente
+                [destinatario],  # Destinatario (correo especificado)
+                fail_silently=False,
+            )
+            return HttpResponse("Informe enviado correctamente.")
+        except Exception as e:
+            return HttpResponse(f"Error al enviar el informe: {str(e)}")
+
+    # Si no es una solicitud POST, mostrar el formulario
+    return render(request, 'monitoring_app/formulario_informe.html')

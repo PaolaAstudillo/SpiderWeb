@@ -1,12 +1,13 @@
 import asyncio
 import logging
 from collections import defaultdict
+import re
 from urllib.parse import urljoin, urlparse
 from asgiref.sync import sync_to_async
 from django.utils.timezone import now
 import requests
 from scrapy import signals, Spider, Request
-from monitoring_app.models import Pagina, Enlace
+from monitoring_app.models import EnlaceRoto, Pagina, Enlace
 import httpx
 from django.db.models import Count
 import signal
@@ -21,6 +22,8 @@ from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from urllib.parse import unquote
+
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +88,16 @@ class EstadoHTTPDetector:
             headers = {'User-Agent': UserAgent().random}
             async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=headers, verify=False) as client:
                 response = await client.get(self.url)
-                return response
+                return response.status_code  # Devuelve el código de estado HTTP
         except httpx.TimeoutException:
             logger.error(f"⏳ Timeout en {self.url}")
+            return 408  # Request Timeout
         except httpx.HTTPStatusError as e:
             logger.error(f"⚠️ Error HTTP en {self.url}: {e.response.status_code}")
+            return e.response.status_code
         except httpx.RequestError as e:
             logger.error(f"❌ Error de conexión en {self.url}: {e}")
-        return None
+            return 503  # Service Unavailable
 
     def detectar_estado_http_http_client(self):
         """Detecta el estado HTTP usando http.client."""
@@ -173,52 +178,115 @@ class EstadoHTTPDetector:
             except Exception as close_err:
                 logger.warning(f"⚠️ Error al cerrar la conexión de PyCurl: {close_err}")
 
-    def detectar_estado_http_300(url):
+
+
+    async def detectar_estado_http_300(self):
         """
         Detecta el estado HTTP de una URL, manejando específicamente los códigos de redireccionamiento (3xx).
-        
-        :param url: La URL a la que se desea hacer la solicitud.
+        Además, detecta redirecciones que involucran cambios en la codificación de la URL.
+
         :return: El código de estado HTTP final después de seguir las redirecciones, o None si ocurre un error.
         """
         try:
             # Realizar la solicitud HTTP GET con redirecciones automáticas
-            response = requests.get(url, timeout=30, allow_redirects=True)
+            async with httpx.AsyncClient() as client:
+                response = await client.get(self.url, follow_redirects=True, timeout=30)
             
             # Obtener el código de estado HTTP final
             status_code = response.status_code
-            logger.info(f"🌐 Estado HTTP final de {url}: {status_code}")
+            logger.info(f"🌐 Estado HTTP final de {self.url}: {status_code}")
             
             # Si el código de estado es 3xx, loguear la redirección
             if 300 <= status_code < 400:
                 logger.info(f"🔀 Redireccionamiento detectado: {status_code}")
                 # Obtener la URL final después de las redirecciones
-                final_url = response.url
+                final_url = str(response.url)
                 logger.info(f"🔀 Redireccionado a: {final_url}")
+                
+                # Comparar la URL original con la URL final para detectar cambios en la codificación
+                original_parsed = urlparse(self.url)
+                final_parsed = urlparse(final_url)
+                
+                # Decodificar las partes de la URL para compararlas
+                original_path = unquote(original_parsed.path)
+                final_path = unquote(final_parsed.path)
+                
+                if original_path != final_path:
+                    logger.info(f"🔀 Cambio en la codificación de la URL detectado: {original_path} -> {final_path}")
             
             return status_code
         
-        except requests.exceptions.Timeout:
-            logger.error(f"⏳ Timeout al conectar con {url}")
+        except httpx.TimeoutException:
+            logger.error(f"⏳ Timeout al conectar con {self.url}")
             return 408  # Request Timeout
         
-        except requests.exceptions.ConnectionError:
-            logger.error(f"🔌 Error de conexión con {url}")
+        except httpx.RequestError as e:
+            logger.error(f"🔌 Error de conexión con {self.url}: {e}")
             return 503  # Service Unavailable
-        
-        except requests.exceptions.TooManyRedirects:
-            logger.error(f"🔀 Demasiadas redirecciones en {url}")
-            return 310  # Too Many Redirects (código personalizado para este caso)
         
         except Exception as e:
             logger.error(f"❌ Error inesperado: {e}")
             return None
+
+
+    async def detectar_estado_404(self):
+        """
+        Detecta si una página devuelve un error 404, ya sea por código de estado o por contenido.
+        
+        :return: El código de estado HTTP (404 si se detecta, None si no).
+        """
+        try:
+            # Realizar la solicitud HTTP
+            async with httpx.AsyncClient() as client:
+                response = await client.get(self.url, timeout=30)
+            
+            # Verificar el código de estado HTTP
+            if response.status_code == 404:
+                logger.warning(f"🚫 404 detectado por código de estado en {self.url}")
+                return 404
+            
+            # Analizar el contenido HTML para buscar indicadores comunes de 404
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Buscar en el título
+            title = soup.find('title')
+            if title and re.search(r'404|not found|page not found', title.text, re.IGNORECASE):
+                logger.warning(f"🚫 404 detectado en el título de la página: {self.url}")
+                return 404
+            
+            # Buscar en elementos span u otros que puedan contener mensajes de error
+            error_messages = soup.find_all(text=re.compile(r'404|not found|page not found', re.IGNORECASE))
+            if error_messages:
+                logger.warning(f"🚫 404 detectado en el contenido de la página: {self.url}")
+                return 404
+            
+            # Si no se encuentra ningún indicador de 404
+            logger.info(f"✅ No se detectó ningún error 404 en {self.url}")
+            return None
+        
+        except httpx.TimeoutException:
+            logger.error(f"⏳ Timeout al conectar con {self.url}")
+            return 408  # Request Timeout
+        
+        except httpx.RequestError as e:
+            logger.error(f"🔌 Error de conexión con {self.url}: {e}")
+            return 503  # Service Unavailable
+        
+        except Exception as e:
+            logger.error(f"❌ Error inesperado en {self.url}: {e}")
+            return None
+
+
+
 
 class HTTPStatusLogger:
     def __init__(self):
         self.http_status_counts = defaultdict(int)
         self.error_links = []
 
-    def log_http_status(self, response):
+  
+
+    def log_http_status(self, response, url=None):
         """Registra los códigos HTTP y maneja cada estado de manera adecuada."""
         if response is None:
             logger.warning("⚠️ Respuesta sin código HTTP.")
@@ -226,10 +294,10 @@ class HTTPStatusLogger:
 
         if hasattr(response, 'status_code'):
             status_code = response.status_code
-            url = str(response.url)
+            url = str(response.url) if hasattr(response, 'url') else url
         else:
             status_code = response
-            url = "URL no disponible"
+            url = url or "URL no disponible"
 
         self.http_status_counts[status_code] += 1
 
@@ -258,6 +326,9 @@ class HTTPStatusLogger:
             or status_handlers["default"]
         )
         handler()
+
+
+
 
     def _handle_redirect(self, response, message):
         redirect_url = response.headers.get("Location", "desconocida") if hasattr(response, 'headers') else "desconocida"
@@ -297,6 +368,8 @@ class SpiderSitio(Spider):
         logger.warning(f"🛑 Señal de interrupción recibida ({signum}). Deteniendo el Spider...")
         self.crawler.engine.close_spider(self, "interrupted")
 
+
+
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
         spider = super().from_crawler(crawler, *args, **kwargs)
@@ -305,8 +378,17 @@ class SpiderSitio(Spider):
 
     async def _save_pagina_data(self, url, status):
         try:
-            pagina, created = await sync_to_async(Pagina.objects.get_or_create)(url=url, defaults={"created_at": now()})
-            await sync_to_async(pagina.actualizar_ultima_consulta)(status)
+            # Guardar la página y su estado HTTP
+            pagina, created = await sync_to_async(Pagina.objects.get_or_create)(
+                url=url,
+                defaults={
+                    "created_at": now(),
+                    "codigo_estado": status,  # Guardar el estado HTTP
+                }
+            )
+            if not created:
+                # Si la página ya existe, actualizar el estado HTTP
+                await sync_to_async(pagina.actualizar_ultima_consulta)(status)
             logger.info(f"💾 Página guardada: {url} (creada: {created})")
             return pagina
         except Exception as e:
@@ -349,6 +431,28 @@ class SpiderSitio(Spider):
         except Exception as e:
             logger.error(f"❌ Error detectando páginas huérfanas: {e}")
 
+
+
+    async def guardar_enlace_roto(self, pagina, url_enlace_roto, codigo_estado):
+        """Guarda un enlace roto en la base de datos."""
+        try:
+            enlace_roto, created = await sync_to_async(EnlaceRoto.objects.get_or_create)(
+                pagina=pagina,
+                url_enlace_roto=url_enlace_roto,
+                defaults={
+                    "codigo_estado": codigo_estado,
+                    "detectado_en": now(),
+                }
+            )
+            if created:
+                logger.info(f"🚫 Enlace roto guardado: {url_enlace_roto} (Código: {codigo_estado}) en {pagina.url}")
+            return enlace_roto
+        except Exception as e:
+            logger.error(f"❌ Error al guardar enlace roto {url_enlace_roto} en {pagina.url}: {e}")
+            return None
+
+
+
     async def parse(self, response):
         try:
             if response.url in self.visited:
@@ -365,23 +469,36 @@ class SpiderSitio(Spider):
                 sync_to_async(detector.detectar_estado_http_selenium)(),
                 sync_to_async(detector.detectar_estado_http_http_client)(),
                 sync_to_async(detector.detectar_estado_http_pycurl)(),
-                sync_to_async(detector.detectar_estado_http_300)()
+                detector.detectar_estado_http_300(),
+                detector.detectar_estado_404()
+
 
               
             ]
            
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
+            estado_http = None
             for result in results:
                 if isinstance(result, Exception):
                     logger.error(f"❌ Error en una de las tareas: {result}")
                 elif result is not None:
-                    self.http_status_logger.log_http_status(result)
+                    # Si el resultado es una tupla, extrae el código de estado
+                    if isinstance(result, tuple):
+                        estado_http, message = result
+                    else:
+                        estado_http = result
+                        message = "Código de estado HTTP"
+                    
+                    self.http_status_logger.log_http_status(estado_http, url=response.url)
 
             # Registrar en la BD
-            pagina_actual = await self._save_pagina_data(response.url, response.status)
+            pagina_actual = await self._save_pagina_data(response.url, estado_http)
 
-            # Usar BeautifulSoup para extraer enlaces de páginas dinámicas
+
+            # Usar BeautifulSoup para extraer enlaces de páginas estáticas
+            
+            # Analizar el contenido HTML para buscar indicadores comunes de 404
             soup = BeautifulSoup(response.text, 'html.parser')
             enlaces = [a['href'] for a in soup.find_all('a', href=True)]
             logger.info(f"🔗 Enlaces encontrados en {response.url}: {len(enlaces)}")
@@ -428,4 +545,8 @@ class SpiderSitio(Spider):
             await asyncio.wait(self.tasks)
             logger.info("✅ Todas las tareas de guardado han finalizado.")
 
-        await self._detect_huerfanas()  # Detectar páginas huérfanas antes de cerrar
+        await self._detect_huerfanas()  # Detectar páginas huérfanas antes de cerrarAA
+        
+        
+        
+        

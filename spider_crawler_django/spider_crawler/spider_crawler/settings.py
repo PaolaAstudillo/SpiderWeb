@@ -44,6 +44,10 @@ LOG_FORMAT = '%(asctime)s [%(name)s] %(levelname)s: %(message)s'
 LOG_DATEFORMAT = '%Y-%m-%d %H:%M:%S'
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
+# Limitar el número de solicitudes concurrentes
+CONCURRENT_REQUESTS = 25
+# Profundidad
+DEPTH_LIMIT = 3
 
 
 # Configure maximum concurrent requests performed by Scrapy (default: 16)

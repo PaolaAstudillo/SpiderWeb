@@ -7,5 +7,6 @@ urlpatterns = [
     path('obtener_progreso/', views.obtener_progreso, name='obtener_progreso'),
     path('stream-progreso/', views.stream_progreso, name='stream_progreso'),  # Ruta para SSE
     path('detener_scrapy/', views.detener_scrapy_view, name='detener_scrapy'),
+    path('enviar_informe/', views.enviar_informe_admin, name='enviar_informe_admin'),
 
 ]

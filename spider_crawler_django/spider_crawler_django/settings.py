@@ -129,3 +129,12 @@ CACHES = {
         'LOCATION': 'unique-snowflake',
     }
 }
+
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'alu0101337418@ull.edu.es'
+EMAIL_HOST_PASSWORD = 'rcow cesc nrzo kdpk'
+DEFAULT_FROM_EMAIL = 'alu0101337418@ull.edu.es'
