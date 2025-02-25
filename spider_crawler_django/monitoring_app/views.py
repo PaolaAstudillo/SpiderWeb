@@ -12,7 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.core.cache import cache
 import psutil
 from monitoring_app.forms import DominioForm
-from monitoring_app.models import Pagina
+from monitoring_app.models import EnlaceRoto, Pagina
 
 # Configuración del logger
 logging.basicConfig(
@@ -342,23 +342,29 @@ def enviar_informe_admin(request):
         # Obtener el correo del destinatario desde el formulario
         destinatario = request.POST.get('destinatario', 'admin@example.com')
 
-        # Obtener enlaces con errores (páginas con códigos de estado 4xx o 5xx)
-        enlaces_con_errores = Pagina.objects.filter(codigo_estado__gte=400, codigo_estado__lt=600)
+        # Obtener enlaces rotos (desde el modelo EnlaceRoto)
+        enlaces_rotos = EnlaceRoto.objects.all()
 
         # Obtener páginas huérfanas
         paginas_huerfanas = Pagina.objects.filter(es_huerfana=True)
 
         # Crear el contenido del correo electrónico
-        subject = "Informe de Enlaces con Errores y Páginas Huérfanas"
+        subject = "Informe de Enlaces Rotos y Páginas Huérfanas"
         message = "Informe generado el {}:\n\n".format(now().strftime("%Y-%m-%d %H:%M:%S"))
 
-        # Agregar enlaces con errores al mensaje
-        if enlaces_con_errores.exists():
-            message += "=== Enlaces con Errores ===\n"
-            for pagina in enlaces_con_errores:
-                message += f"URL: {pagina.url} - Código de Estado: {pagina.codigo_estado}\n"
+        # Agregar enlaces rotos al mensaje
+        if enlaces_rotos.exists():
+            message += "=== Enlaces Rotos ===\n"
+            for enlace_roto in enlaces_rotos:
+                message += (
+                    f"Página: {enlace_roto.pagina.url}\n"
+                    f"Enlace Roto: {enlace_roto.url_enlace_roto}\n"
+                    f"Código de Estado: {enlace_roto.codigo_estado}\n"
+                    f"Tipo de Contenido: {enlace_roto.tipo_contenido}\n"
+                    f"Detectado en: {enlace_roto.detectado_en}\n\n"
+                )
         else:
-            message += "No se encontraron enlaces con errores.\n"
+            message += "No se encontraron enlaces rotos.\n"
 
         # Agregar páginas huérfanas al mensaje
         if paginas_huerfanas.exists():

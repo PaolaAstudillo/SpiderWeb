@@ -142,6 +142,13 @@ class EnlaceRoto(models.Model):
         verbose_name="Código de Estado",
         help_text="Código HTTP devuelto por el enlace roto.",
     )
+    tipo_contenido = models.CharField(
+        max_length=255,
+        verbose_name="Tipo de Contenido",
+        help_text="Tipo de contenido del enlace roto (si está disponible).",
+        blank=True,
+        null=True,
+    )
     detectado_en = models.DateTimeField(
         default=now,
         verbose_name="Detectado en",
